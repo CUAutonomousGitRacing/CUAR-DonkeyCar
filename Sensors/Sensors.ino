@@ -7,67 +7,31 @@
   static constexpr uint32_t HB_TIMEOUT_MS = 250; //how often controller should wait before assuming other controller is dead
   elapsedMillis sinceHbRx; //how often since last heartbeat received
   unsigned long lastSend = 0; //stores when last send occurred in milliseconds
-  static const uint8_t check_array_size = 10;
-  static const uint8_t pins_array_size = 4;
-  uint8_t volt_total = 0;
-  uint8_t  temp_total = 0;
-  uint8_t volt_avg = 0;
-  uint8_t temp_avg = 0;
-  bool volt_error = true;
-  bool temp_error = true;
-  uint8_t const pins[pins_array_size] = {14, 15, 16, 41}; // 20,21 to control teensy //, A0, A1, A2, A3, 14, 15, 16, 17, 
-  uint8_t temp_check_array[pins_array_size][check_array_size] = {0};
-  uint8_t volt_check_array[pins_array_size][check_array_size] = {0};
-  size_t const NUM_PINS = sizeof(pins);
+
+  static const uint8_t check_array_size = 10; //how many readings to take before averaging to mitigate noise effect
+  static const uint8_t pins_array_size = 4; //how many pins are checked
+  
+  uint8_t volt_total = 0; //add up all voltage values for averaging
+  uint8_t volt_avg = 0; //stores average of voltage readings
+  uint8_t  temp_total = 0; //add up all temperature values for averaging
+  uint8_t temp_avg = 0; //stores average of temperature values
+
+  bool volt_error = true; //start errored to start killed, ***DO NOT CHANGE TO FALSE FOR SAFETY***
+  bool temp_error = true; //start errored to start killed, ***DO NOT CHANGE TO FALSE FOR SAFETY***
+  uint8_t const pins[pins_array_size] = {14, 15, 16, 41}; // 20,21 to control teensy, A0, A1, A2, A3, 14, 15, 16, 17, 
+  uint8_t temp_check_array[pins_array_size][check_array_size] = {0}; //stores temperature check values
+  uint8_t volt_check_array[pins_array_size][check_array_size] = {0}; //stores voltage check values
+  size_t const NUM_PINS = sizeof(pins); //used for averaging, no need to change
   float const MIN_VOLT = 0.0f; //minimum acceptable voltage for machine to run
   float const MAX_VOLT = 1000.0f; //maximum acceptable voltage for machine to run
   float const MIN_TEMP = 0.0f; //minimum temperature voltage for machine to run
   float const MAX_TEMP = 100000.0f; //minimum temperature voltage for machine to run
-  float const FILTER_MIN = 0.0f;
-  float const FILTER_MAX = 100.0f;
-  uint8_t const KILL_PIN = 6;        // choose a real pin later
-  bool comms_ok = false;             // tracks if heartbeat is occurring
-  static bool kill_tripped = true;      // FAIL-SAFE: start killed
+  float const FILTER_MIN = 0.0f; //filters all readings below this amount
+  float const FILTER_MAX = 100.0f; //filters all readings above this amount
+  uint8_t const KILL_PIN = 6; //pin used for kill switch
+  bool comms_ok = false; // tracks if heartbeat is occurring
+  static bool kill_tripped = true; // start killed, ***DO NOT CHANGE TO FALSE FOR SAFETY***
 
-void sendHeartbeat() {
-  //ack always 0 for now
-  String cmd = "HB," + "1" + ",0";
-
-  uint8_t cs = verifyCheckSum(cmd);
-
-  Serial1.print('<');
-  Serial1.print(cmd);
-  Serial1.print('|');
-  Serial1.print(cs);
-  Serial1.println('>');
-  Serial1.println('\n');
-
-  Serial.print("Sent: ");
-  Serial.print('<');
-  Serial.print(cmd);
-  Serial.print('|');
-  Serial.print(cs);
-  Serial.println('>');
-  Serial.println('\n');
-}
-
-void parsePacket(char *cmd, int *command_values){
-  int index = 0;
-  char *delim = strtok(cmd, ",");
-  while(delim != NULL && index < 1){
-    command_values[index] = atoi(delim);
-    delim = strtok(NULL, ","); // Start where last "," found
-    index++;
-  }
-}
-
-bool verifyCheckSum(String cmd, int received_check_sum){
-  int check_sum = 0;
-  for(int i = 0; i < static_cast<int>(cmd.length()); i++){
-    check_sum ^= cmd[i];
-  } 
-  return check_sum == received_check_sum;
-}
 
   void setup() {
     Serial1.begin(115200);
@@ -79,7 +43,7 @@ bool verifyCheckSum(String cmd, int received_check_sum){
     }
 
     pinMode(KILL_PIN, OUTPUT);
-    digitalWrite(KILL_PIN, LOW);        // LOW = KILL (recommended)
+    digitalWrite(KILL_PIN, LOW);        // LOW = KILL
   }
 
   void loop() {
@@ -139,8 +103,10 @@ bool verifyCheckSum(String cmd, int received_check_sum){
         temp_check_array += temp_read;
         temp_total += temp_read;
       }
+      //average values to reduce outlier effect
       volt_avg = volt_total/check_array_size;
       temp_avg = temp_total/check_array_size;
+      //error if average too high
       if(volt_avg <= MIN_VOLT){
         Serial.println("ERROR: VOLTAGE UNDERFLOW AT PIN");
         Serial.println(pins[i]);
@@ -165,8 +131,6 @@ bool verifyCheckSum(String cmd, int received_check_sum){
         volt_total = volt_total += volt_check_array[j];
         temp_total = temp_total += temp_check_array[j];
       }
-      volt_avg = volt_total/pins_array_size;
-      temp_avg = temp_total/pins_array_size;
 
       if (!volt_error || !temp_error) {
         errorPin += String(pins[i]);   
@@ -185,7 +149,7 @@ bool verifyCheckSum(String cmd, int received_check_sum){
       // }
     }
 
-    // Later you’ll AND this with comms_ok from UART heartbeat
+    // Later AND this with comms_ok from UART heartbeat
     digitalWrite(KILL_PIN, kill_tripped ? LOW : HIGH);
     delay(LOOP_TIME);
   }

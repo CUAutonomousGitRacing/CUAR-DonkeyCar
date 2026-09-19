@@ -1,31 +1,5 @@
 #include "teensy_functions.h"
 
-// bool voltCheck(uint8_t pin, float cart_min, float cart_max, float filter_min, float filter_max){
-//   int rawRead = analogRead(pin);
-//   float voltage = (3.3f * rawRead) / 1023.0f;
-//   bool flowError = (voltage < min) || (voltage > max);
-//   static bool flow_check = false; 
-//   Serial.println(voltage);
-//   if(flowError && !flow_check){ 
-//     Serial.println("WARNING: VOLTAGE ERROR");
-//     if(min > voltage){
-//       Serial.println("VOLTAGE TOO LOW AT ");
-//       Serial.println(pin);
-//     }
-//     if(max < voltage){
-//       Serial.println("VOLTAGE TOO HIGH AT ");
-//       Serial.println(pin);
-//     }
-//     flow_check = true;
-//     return false;
-//   }
-
-  if(!flowError){
-    flow_check = false;
-  }
-  return true;
-}
-
 uint8_t tempCheck(uint8_t pin, float min, float max){
   float e = 2.718281828459045;
   int rawRead = analogRead(pin);
@@ -47,4 +21,44 @@ uint8_t tempCheck(uint8_t pin, float min, float max){
   }
   return sys_temp;
 }
+void sendHeartbeat() { //sends heartbeat communication to other teensy
+  //ack always 0 for now
+  String cmd = "HB," + "1" + ",0";
+
+  uint8_t cs = verifyCheckSum(cmd);
+
+  Serial1.print('<');
+  Serial1.print(cmd);
+  Serial1.print('|');
+  Serial1.print(cs);
+  Serial1.println('>');
+  Serial1.println('\n');
+
+  Serial.print("Sent: ");
+  Serial.print('<');
+  Serial.print(cmd);
+  Serial.print('|');
+  Serial.print(cs);
+  Serial.println('>');
+  Serial.println('\n');
+}
+
+void parsePacket(char *cmd, int *command_values){ //parses packet to extract info
+  int index = 0;
+  char *delim = strtok(cmd, ",");
+  while(delim != NULL && index < 1){
+    command_values[index] = atoi(delim);
+    delim = strtok(NULL, ","); // Start where last "," found
+    index++;
+  }
+}
+
+bool verifyCheckSum(String cmd, int received_check_sum){ //verifies packet to prevent corruption
+  int check_sum = 0;
+  for(int i = 0; i < static_cast<int>(cmd.length()); i++){
+    check_sum ^= cmd[i];
+  } 
+  return check_sum == received_check_sum;
+}
+
 
